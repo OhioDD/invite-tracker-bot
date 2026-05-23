@@ -59,18 +59,25 @@ export async function reconcileAllTicketsInGuild(guild) {
   const tickets = await getAllActiveTicketsForGuild(guild.id);
   let closed = 0;
 
-  for (const ticket of tickets) {
-    if (isPendingPlaceholder(ticket.channel_id)) {
-      await closeOrphanTicket(ticket, 'stuck reservation (startup)');
-      closed++;
-      continue;
-    }
+  const results = await Promise.allSettled(
+    tickets.map(async (ticket) => {
+      if (isPendingPlaceholder(ticket.channel_id)) {
+        await closeOrphanTicket(ticket, 'stuck reservation (startup)');
+        return 1;
+      }
 
-    const channel = await fetchChannel(guild, ticket.channel_id);
-    if (!channel) {
-      await closeOrphanTicket(ticket, 'channel missing (startup)');
-      closed++;
-    }
+      const channel = await fetchChannel(guild, ticket.channel_id);
+      if (!channel) {
+        await closeOrphanTicket(ticket, 'channel missing (startup)');
+        return 1;
+      }
+
+      return 0;
+    })
+  );
+
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value) closed += 1;
   }
 
   if (closed > 0) {

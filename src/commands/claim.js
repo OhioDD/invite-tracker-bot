@@ -29,6 +29,7 @@ export const data = new SlashCommandBuilder()
       )
   );
 
+/** Handles /claim command (setup and category subcommands). */
 export async function execute(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 

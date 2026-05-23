@@ -7,17 +7,20 @@ const recoveryReady = new Promise((resolve) => {
 
 const guildLocks = new Map();
 
+/** Marks recovery as complete and resolves the recovery promise. */
 export function completeRecovery() {
   recoveryComplete = true;
   recoveryResolve?.();
 }
 
+/** Waits for recovery to complete before proceeding. */
 export async function waitForRecovery() {
   if (!recoveryComplete) {
     await recoveryReady;
   }
 }
 
+/** Executes a function with a per-guild mutex lock. */
 export async function withGuildLock(guildId, fn) {
   const previous = guildLocks.get(guildId) || Promise.resolve();
   let release;

@@ -32,14 +32,17 @@ export const BUTTON_ENTER_CLAIM = 'ticket_enter_claim';
 export const MODAL_CLAIM_SUBMIT = 'ticket_claim_modal';
 const MODAL_CLAIM_FIELD = 'claim_name';
 
+/** Creates a compact embed with color, title, and description. */
 function compactEmbed(color, title, line) {
   return new EmbedBuilder().setColor(color).setTitle(title).setDescription(line);
 }
 
+/** Formats invitees as an @username list separated by dots. */
 function inviteeList(invitees) {
   return invitees.map((p) => `@${p.username}`).join(' · ');
 }
 
+/** Creates a Submit Proof button row. */
 function proofButtons() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -49,6 +52,7 @@ function proofButtons() {
   );
 }
 
+/** Creates an Enter (claim) button row. */
 function enterClaimButton() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -58,6 +62,7 @@ function enterClaimButton() {
   );
 }
 
+/** Formats a proof rejection message with reason and required invitees. */
 function formatRejection(result, proofCount, requiredInvitees) {
   const need = inviteeList(requiredInvitees);
   let reason = (result.reason || 'Not approved.').replace(/\*\*/g, '').trim();
@@ -65,6 +70,7 @@ function formatRejection(result, proofCount, requiredInvitees) {
   return `${reason}\n\nNeed ${proofCount} DM(s): ${need}`;
 }
 
+/** Resolves a ticket by channel ID, using cache first. */
 async function resolveTicket(channelId) {
   const cached = getCachedTicket(channelId);
   if (cached) return cached;
@@ -74,10 +80,12 @@ async function resolveTicket(channelId) {
   return ticket;
 }
 
+/** Checks if the interaction user owns the given ticket. */
 function isTicketOwner(interaction, ticket) {
   return interaction.user.id === ticket.user_id;
 }
 
+/** Saves the proof anchor message ID for paginated image collection. */
 async function setProofAnchor(channelId, message) {
   if (message?.id) {
     await updateTicketProofAnchor(channelId, message.id);
@@ -85,6 +93,21 @@ async function setProofAnchor(channelId, message) {
   }
 }
 
+/** Resolves ticket and validates ownership, sending error replies on failure. */
+async function resolveOwnTicket(interaction) {
+  const ticket = await resolveTicket(interaction.channelId);
+  if (!ticket) {
+    await interaction.editReply({ content: 'No ticket found.' });
+    return null;
+  }
+  if (!isTicketOwner(interaction, ticket)) {
+    await interaction.editReply({ content: 'Not your ticket.' });
+    return null;
+  }
+  return ticket;
+}
+
+/** Sends the initial ticket message based on invite count (zero or with proof buttons). */
 export async function sendFirstTicketMessage(channel, userId) {
   const count = await getValidInviteCount(userId, config.mainGuildId);
   const counted =
@@ -99,15 +122,15 @@ export async function sendFirstTicketMessage(channel, userId) {
         .setStyle(ButtonStyle.Secondary)
     );
 
-    const msg = await channel.send({
+    await channel.send({
       embeds: [compactEmbed(0xed4245, '0 invites', 'No valid invites on the main server.')],
       components: [row]
-    });
-    await setProofAnchor(channel.id, msg);
-    return count;
+    }).then((msg) => setProofAnchor(channel.id, msg));
+
+    return;
   }
 
-  const msg = await channel.send({
+  await channel.send({
     embeds: [
       compactEmbed(
         0x5865f2,
@@ -116,12 +139,10 @@ export async function sendFirstTicketMessage(channel, userId) {
       )
     ],
     components: [proofButtons()]
-  });
-
-  await setProofAnchor(channel.id, msg);
-  return count;
+  }).then((msg) => setProofAnchor(channel.id, msg));
 }
 
+/** Sends a proof rejection message with retry button. */
 async function sendProofRejected(channel, proofCount, result, requiredInvitees) {
   const msg = await channel.send({
     embeds: [
@@ -134,6 +155,7 @@ async function sendProofRejected(channel, proofCount, result, requiredInvitees) 
   return msg;
 }
 
+/** Sends an awaiting claim name message with Enter button. */
 async function sendAwaitingClaimName(channel, verifiedList) {
   const msg = await channel.send({
     embeds: [
@@ -149,6 +171,7 @@ async function sendAwaitingClaimName(channel, verifiedList) {
   return msg;
 }
 
+/** Handles the Enter Claim button click, showing a claim name modal. */
 export async function handleEnterClaimButton(interaction) {
   const ticket = await resolveTicket(interaction.channelId);
   if (!ticket) {
@@ -188,20 +211,13 @@ export async function handleEnterClaimButton(interaction) {
   await interaction.showModal(modal);
 }
 
+/** Handles claim modal submission, renames channel and updates workflow. */
 export async function handleClaimModalSubmit(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const ticket = await resolveTicket(interaction.channelId);
-    if (!ticket) {
-      await interaction.editReply({ content: 'No ticket found.' });
-      return;
-    }
-
-    if (!isTicketOwner(interaction, ticket)) {
-      await interaction.editReply({ content: 'Not your ticket.' });
-      return;
-    }
+    const ticket = await resolveOwnTicket(interaction);
+    if (!ticket) return;
 
     if (ticket.status !== 'awaiting_claim') {
       await interaction.editReply({ content: 'Claim name already submitted.' });
@@ -228,13 +244,14 @@ export async function handleClaimModalSubmit(interaction) {
       ticket.user_id
     );
 
+    const displayName = counted ?? '@' + interaction.user.username;
     await interaction.channel.send({
       content: staffPing ?? null,
       embeds: [
         compactEmbed(
           0x57f287,
           'Payout queue',
-          `${counted ?? `@${interaction.user.username}`}\nClaim: ${claimName}`
+          `${displayName}\nClaim: ${claimName}`
         )
       ],
       allowedMentions: staffPing ? { roles: staffRoleIds } : { parse: [] }
@@ -247,20 +264,13 @@ export async function handleClaimModalSubmit(interaction) {
   }
 }
 
+/** Handles the Submit Proof button click, runs AI verification. */
 export async function handleSubmitProofButton(interaction) {
   await interaction.deferReply();
 
   try {
-    const ticket = await resolveTicket(interaction.channelId);
-    if (!ticket) {
-      await interaction.editReply({ content: 'No ticket found.' });
-      return;
-    }
-
-    if (!isTicketOwner(interaction, ticket)) {
-      await interaction.editReply({ content: 'Not your ticket.' });
-      return;
-    }
+    const ticket = await resolveOwnTicket(interaction);
+    if (!ticket) return;
 
     if (ticket.status === 'no_invites') {
       await interaction.editReply({ content: '0 invites. Nothing to claim.' });
@@ -268,14 +278,16 @@ export async function handleSubmitProofButton(interaction) {
     }
 
     if (ticket.status !== 'awaiting_proof') {
-      const msg =
-        ticket.status === 'waiting_payout'
-          ? 'Already in payout queue.'
-          : ticket.status === 'awaiting_claim'
-            ? 'Proof passed — click **Enter** to name your claim.'
-            : ticket.status === 'verifying'
-              ? 'Already checking proof.'
-              : 'Cannot submit proof now.';
+      let msg;
+      if (ticket.status === 'waiting_payout') {
+        msg = 'Already in payout queue.';
+      } else if (ticket.status === 'awaiting_claim') {
+        msg = 'Proof passed — click **Enter** to name your claim.';
+      } else if (ticket.status === 'verifying') {
+        msg = 'Already checking proof.';
+      } else {
+        msg = 'Cannot submit proof now.';
+      }
       await interaction.editReply({ content: msg });
       return;
     }
@@ -382,20 +394,13 @@ export async function handleSubmitProofButton(interaction) {
   }
 }
 
+/** Handles the Close Ticket button for zero-invite tickets. */
 export async function handleCloseZeroTicket(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const ticket = await resolveTicket(interaction.channelId);
-    if (!ticket) {
-      await interaction.editReply({ content: 'No ticket found.' });
-      return;
-    }
-
-    if (!isTicketOwner(interaction, ticket)) {
-      await interaction.editReply({ content: 'Not your ticket.' });
-      return;
-    }
+    const ticket = await resolveOwnTicket(interaction);
+    if (!ticket) return;
 
     if (ticket.status !== 'no_invites') {
       await interaction.editReply({ content: 'Only for zero-invite tickets.' });

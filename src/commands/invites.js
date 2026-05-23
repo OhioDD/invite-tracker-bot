@@ -31,6 +31,7 @@ function inviteeStatus(inviterId, row) {
   return 'valid';
 }
 
+/** Resolves a user ID to username, falling back to the ID on failure. */
 async function resolveUsername(client, guildId, userId) {
   try {
     const guild = await client.guilds.fetch(guildId);
@@ -46,6 +47,7 @@ async function resolveUsername(client, guildId, userId) {
   }
 }
 
+/** Handles /invites command (list and clear subcommands). */
 export async function execute(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -84,11 +86,12 @@ export async function execute(interaction) {
     return;
   }
 
-  const lines = [];
-  for (const row of rows) {
-    const name = await resolveUsername(interaction.client, config.mainGuildId, row.invitee_id);
-    lines.push(`@${name} — ${inviteeStatus(target.id, row)}`);
-  }
+  const names = await Promise.all(
+    rows.map((row) =>
+      resolveUsername(interaction.client, config.mainGuildId, row.invitee_id)
+    )
+  );
+  const lines = rows.map((row, i) => `@${names[i]} — ${inviteeStatus(target.id, row)}`);
 
   const valid = rows.filter(
     (r) => r.invitee_id !== target.id && !r.is_fake && !r.is_left

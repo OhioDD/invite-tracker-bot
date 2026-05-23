@@ -13,6 +13,7 @@ function getCooldown(commandName) {
   return DEFAULTS[commandName] ?? 2000;
 }
 
+/** Checks per-user command cooldown, returns remaining seconds or null. */
 export function checkRateLimit(userId, commandName) {
   const key = `${userId}:${commandName}`;
   const now = Date.now();

@@ -3,6 +3,7 @@ import config from '../config.js';
 
 export const name = 'guildMemberRemove';
 
+/** Handles member leave events — marks invitees as left on main guild. */
 export async function execute(member) {
   try {
     if (member.guild.id !== config.mainGuildId) return;

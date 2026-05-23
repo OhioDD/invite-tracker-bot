@@ -6,21 +6,21 @@ export async function formatCountedInvitees(client, guildId, inviterId) {
   if (ids.length === 0) return null;
 
   const guild = await client.guilds.fetch(guildId);
-  const names = [];
-
-  for (const id of ids) {
-    try {
-      const member = await guild.members.fetch(id);
-      names.push(`@${member.user.username}`);
-    } catch {
+  const results = await Promise.allSettled(
+    ids.map(async (id) => {
       try {
-        const user = await client.users.fetch(id);
-        names.push(`@${user.username}`);
+        const member = await guild.members.fetch(id);
+        return `@${member.user.username}`;
       } catch {
-        names.push(`<@${id}>`);
+        try {
+          const user = await client.users.fetch(id);
+          return `@${user.username}`;
+        } catch {
+          return `<@${id}>`;
+        }
       }
-    }
-  }
+    })
+  );
 
-  return names.join(', ');
+  return results.map((r) => (r.status === 'fulfilled' ? r.value : `<@${ids[results.indexOf(r)]}>`)).join(', ');
 }

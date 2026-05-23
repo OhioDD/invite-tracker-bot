@@ -3,6 +3,7 @@ import config from '../config.js';
 
 export const name = 'guildMemberAdd';
 
+/** Handles member join events — records invite attribution on main guild. */
 export async function execute(member) {
   try {
     if (member.guild.id !== config.mainGuildId) return;

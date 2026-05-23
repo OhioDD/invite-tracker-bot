@@ -5,6 +5,7 @@ import config from '../config.js';
 
 export const name = 'channelDelete';
 
+/** Handles channel deletion — auto-closes ticket records for deleted channels. */
 export async function execute(channel) {
   try {
     if (!channel.guild || channel.guild.id !== config.claimGuildId) return;

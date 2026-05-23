@@ -2,6 +2,7 @@ import config from '../config.js';
 import { waitForRecovery } from './guildState.js';
 import { onMemberJoin } from './inviteEngine.js';
 
+/** Checks if a member looks like a fake/alt account based on account age. */
 export function isFakeAccount(member) {
   if (member.user.bot) return true;
   const daysOld = (Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24);

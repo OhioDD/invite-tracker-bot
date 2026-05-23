@@ -12,6 +12,7 @@ let dirty = false;
 let refreshInFlight = null;
 let refreshGeneration = 0;
 
+/** Persists the invite count cache to disk as JSON. */
 async function persistToDisk() {
   if (!dirty) return;
   await mkdir(CACHE_DIR, { recursive: true });
@@ -24,6 +25,7 @@ async function persistToDisk() {
   dirty = false;
 }
 
+/** Initializes invite count cache from disk and schedules periodic refresh. */
 export async function initInviteCountCache() {
   await mkdir(CACHE_DIR, { recursive: true });
   try {
@@ -44,10 +46,12 @@ export async function initInviteCountCache() {
   setInterval(() => refreshInviteCountCacheFromDb().catch(console.error), 120_000);
 }
 
+/** Refreshes the invite count cache from the database. */
 export async function refreshInviteCountCacheFromDb() {
   if (refreshInFlight) return refreshInFlight;
 
-  const gen = ++refreshGeneration;
+  refreshGeneration += 1;
+  const gen = refreshGeneration;
 
   refreshInFlight = (async () => {
     const rows = await sql`
@@ -80,6 +84,7 @@ export async function refreshInviteCountCacheFromDb() {
 
 let debounceTimer = null;
 
+/** Schedules a debounced refresh of the invite count cache. */
 export function scheduleInviteCountRefresh() {
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
@@ -89,10 +94,12 @@ export function scheduleInviteCountRefresh() {
 }
 
 /** Fast path for tickets / buttons — no database round-trip. */
+/** Gets the cached invite count for a user (fast path, no DB). */
 export function getCachedInviteCount(userId) {
   return counts.get(userId) ?? 0;
 }
 
+/** Sets the cached invite count for a user and marks cache as dirty. */
 export function setCachedInviteCount(userId, count) {
   counts.set(userId, Math.max(0, count));
   dirty = true;

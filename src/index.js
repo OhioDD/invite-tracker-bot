@@ -25,18 +25,20 @@ const client = new Client({
 
 client.commands = new Collection();
 
+/** Loads all command files from the commands directory into the client. */
 async function loadCommands() {
   try {
     const commandsPath = join(process.cwd(), 'src', 'commands');
-    const commandFiles = await readdir(commandsPath);
+    const commandFiles = (await readdir(commandsPath)).filter((f) => f.endsWith('.js'));
+    const imported = await Promise.all(
+      commandFiles.map(async (file) => {
+        const filePath = join(commandsPath, file);
+        const fileUrl = pathToFileURL(filePath).href;
+        return { file, module: await import(fileUrl) };
+      })
+    );
 
-    for (const file of commandFiles) {
-      if (!file.endsWith('.js')) continue;
-
-      const filePath = join(commandsPath, file);
-      const fileUrl = pathToFileURL(filePath).href;
-      const command = await import(fileUrl);
-
+    for (const { file, module: command } of imported) {
       if ('data' in command && 'execute' in command) {
         client.commands.set(command.data.name, command);
         console.log(`Loaded command: ${command.data.name}`);
@@ -47,18 +49,20 @@ async function loadCommands() {
   }
 }
 
+/** Loads all event files from the events directory into the client. */
 async function loadEvents() {
   try {
     const eventsPath = join(process.cwd(), 'src', 'events');
-    const eventFiles = await readdir(eventsPath);
+    const eventFiles = (await readdir(eventsPath)).filter((f) => f.endsWith('.js'));
+    const imported = await Promise.all(
+      eventFiles.map(async (file) => {
+        const filePath = join(eventsPath, file);
+        const fileUrl = pathToFileURL(filePath).href;
+        return await import(fileUrl);
+      })
+    );
 
-    for (const file of eventFiles) {
-      if (!file.endsWith('.js')) continue;
-
-      const filePath = join(eventsPath, file);
-      const fileUrl = pathToFileURL(filePath).href;
-      const event = await import(fileUrl);
-
+    for (const event of imported) {
       if (event.once) {
         client.once(event.name, (...args) => event.execute(...args));
       } else {
@@ -71,6 +75,7 @@ async function loadEvents() {
   }
 }
 
+/** Starts the bot — validates config, inits DB, loads commands/events, logs in. */
 async function start() {
   try {
     validateConfig();
@@ -103,6 +108,7 @@ process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error);
 });
 
+/** Graceful shutdown — takes invite snapshot and closes DB connection. */
 async function shutdown(signal) {
   console.log(`Received ${signal}, taking invite snapshot...`);
   try {
@@ -124,17 +130,19 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 let keepAliveTick = 0;
+let keepAliveTimer = null;
 
+/** Periodic keepalive loop — syncs invites, takes snapshots, cleans up stale registry. */
 async function keepAlive() {
   const { waitForRecovery } = await import('./utils/guildState.js');
   await waitForRecovery();
 
-  while (true) {
+  const tick = async () => {
     try {
       if (client.isReady()) {
         const mainGuild = client.guilds.cache.get(config.mainGuildId);
         if (mainGuild) {
-          keepAliveTick++;
+          keepAliveTick += 1;
           if (keepAliveTick % 6 === 0) {
             await syncInviteLedger(mainGuild);
           }
@@ -149,10 +157,10 @@ async function keepAlive() {
     } catch (error) {
       console.error('Error in keepAlive:', error);
     }
-    await new Promise((resolve) => setTimeout(resolve, 180000));
-  }
+  };
+
+  tick();
+  keepAliveTimer = setInterval(tick, 180000);
 }
 
-start().then(() => {
-  keepAlive();
-});
+start().then(() => keepAlive());

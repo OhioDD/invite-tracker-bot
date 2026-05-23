@@ -1,13 +1,13 @@
 import { MessageFlags, PermissionsBitField, ChannelType } from 'discord.js';
-import { getGuildConfig, insertActiveTicket } from '../database/db.js';
+import { getGuildConfig, insertActiveTicket, getValidInviteCount } from '../database/db.js';
 import { sendFirstTicketMessage } from './ticketFlow.js';
 import { buildTicketChannelName } from './channelNames.js';
 import { cacheTicket } from './ticketCache.js';
 import { reconcileTicketsForUser } from './ticketReconcile.js';
-import { getValidInviteCount } from '../database/db.js';
 import config from '../config.js';
 import { getStaffRoleIds } from './staffRoles.js';
 
+/** Gets guild settings including staff role IDs and ticket category ID. */
 async function getGuildSettings(guildId) {
   const [staffRoleIds, ticketCategoryId] = await Promise.all([
     getStaffRoleIds(guildId),
@@ -16,14 +16,14 @@ async function getGuildSettings(guildId) {
   return { staffRoleIds, ticketCategoryId };
 }
 
+/** Creates a ticket channel and inserts a DB record for the user. */
 export async function createTicket(interaction) {
   let ticketChannel = null;
 
   try {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-    const guild = interaction.guild;
-    const user = interaction.user;
+    const { guild, user } = interaction;
 
     if (!guild || guild.id !== config.claimGuildId) {
       await interaction.editReply({ content: 'This button can only be used on the claim server.' });

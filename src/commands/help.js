@@ -4,6 +4,7 @@ export const data = new SlashCommandBuilder()
   .setName('help')
   .setDescription('Command list and claim flow');
 
+/** Sends the help embed listing all commands and the claim flow. */
 export async function execute(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 

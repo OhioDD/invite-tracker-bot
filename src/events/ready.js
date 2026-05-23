@@ -1,4 +1,4 @@
-import { rebuildInviteRegistry, syncInviteLedger, takeInviteSnapshot } from '../utils/inviteEngine.js';
+import { rebuildInviteRegistry, syncInviteLedger } from '../utils/inviteEngine.js';
 import { completeRecovery } from '../utils/guildState.js';
 import { reconcileAllTicketsInGuild } from '../utils/ticketReconcile.js';
 import config from '../config.js';
@@ -6,6 +6,7 @@ import config from '../config.js';
 export const name = 'clientReady';
 export const once = true;
 
+/** Handles the bot ready event — rebuilds registry, syncs invites, reconciles tickets. */
 export async function execute(client) {
   try {
     console.log(`Logged in as ${client.user.tag}`);

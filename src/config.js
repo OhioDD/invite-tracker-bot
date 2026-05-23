@@ -14,6 +14,7 @@ const config = {
   ollamaCloudHost: 'https://ollama.com'
 };
 
+/** Validates required environment config at startup, throws on missing vars. */
 export function validateConfig() {
   const required = [
     ['DISCORD_TOKEN', config.token],

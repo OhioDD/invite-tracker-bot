@@ -17,6 +17,7 @@ export const data = new SlashCommandBuilder()
       )
   );
 
+/** Handles /ticket close command for staff force-closing tickets. */
 export async function execute(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 

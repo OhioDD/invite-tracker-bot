@@ -10,13 +10,16 @@ const commandsPath = join(process.cwd(), 'src', 'commands');
 try {
   const commandFiles = await readdir(commandsPath);
   
-  for (const file of commandFiles) {
-    if (!file.endsWith('.js')) continue;
-    
-    const filePath = join(commandsPath, file);
-    const fileUrl = pathToFileURL(filePath).href;
-    const command = await import(fileUrl);
-    
+  const jsFiles = commandFiles.filter((f) => f.endsWith('.js'));
+  const imported = await Promise.all(
+    jsFiles.map(async (file) => {
+      const filePath = join(commandsPath, file);
+      const fileUrl = pathToFileURL(filePath).href;
+      return import(fileUrl);
+    })
+  );
+
+  for (const command of imported) {
     if ('data' in command && 'execute' in command) {
       commands.push(command.data.toJSON());
       console.log(`Loaded command: ${command.data.name}`);

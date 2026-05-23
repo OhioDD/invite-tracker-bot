@@ -13,6 +13,7 @@ import { checkRateLimit } from '../utils/rateLimiter.js';
 
 export const name = 'interactionCreate';
 
+/** Handles all interaction types — buttons, modals, and slash commands. */
 export async function execute(interaction) {
   try {
     if (interaction.isButton()) {

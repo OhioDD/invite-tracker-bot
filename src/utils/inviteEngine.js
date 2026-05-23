@@ -29,12 +29,12 @@ const CHUNK_SIZE = 500;
 const API_DELAY_MS = 100;
 
 function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isUnknownMemberError(err) {
   if (!err) return false;
-  const code = err.code;
+  const { code } = err;
   return (
     code === 'UnknownMember' ||
     code === 10007 ||
@@ -74,18 +74,16 @@ export async function onMemberJoin(guild, member, invite = null) {
       inviterId = await getInviterForCode(guild.id, inviteCode);
     }
 
-    if (!inviterId && !inviteCode) {
-      if (guild.vanityURLCode) {
-        try {
-          const vanityData = await guild.fetchVanityData();
-          if (vanityData?.code) {
-            inviteCode = vanityData.code;
-            isVanity = true;
-            inviterId = 'vanity';
-          }
-        } catch {
-          // vanity fetch failed, continue without
+    if (!inviterId && !inviteCode && guild.vanityURLCode) {
+      try {
+        const vanityData = await guild.fetchVanityData();
+        if (vanityData?.code) {
+          inviteCode = vanityData.code;
+          isVanity = true;
+          inviterId = 'vanity';
         }
+      } catch {
+        // vanity fetch failed, continue without
       }
     }
 
@@ -102,9 +100,8 @@ export async function onMemberJoin(guild, member, invite = null) {
       const tags = [];
       if (fake) tags.push('fake');
       if (isVanity) tags.push('analytics-only');
-      console.log(
-        `[live] ${member.user.tag} → ${label} (${inviteCode ?? '?'})${tags.length ? ` [${tags.join(', ')}]` : ''}`
-      );
+      const tagSuffix = tags.length ? ' [' + tags.join(', ') + ']' : '';
+      console.log(`[live] ${member.user.tag} → ${label} (${inviteCode ?? '?'})${tagSuffix}`);
       scheduleInviteCountRefresh();
       return { ok: true, source: 'live', inviterId, fake, isVanity };
     }
@@ -174,7 +171,7 @@ async function computeInviteDeltas(guild, currentInvites, vanityData = null) {
 function expandSlots(deltas) {
   const slots = [];
   for (const d of deltas) {
-    for (let i = 0; i < d.delta; i++) {
+    for (let i = 0; i < d.delta; i += 1) {
       slots.push({ code: d.code, inviterId: d.inviterId, isVanity: d.isVanity });
     }
   }
@@ -197,32 +194,36 @@ async function fetchVanityData(guild) {
 const FETCH_RETRIES = 3;
 const FETCH_CHUNK_SIZE = 5000;
 
+/** Fetches all guild members in paginated chunks with retries. */
 async function fetchAllMembersChunked(guild) {
   const fetched = [];
   let after;
 
-  for (let attempt = 1; attempt <= FETCH_RETRIES; attempt++) {
-    try {
-      const chunk = await guild.members.fetch({ limit: FETCH_CHUNK_SIZE, after });
+  while (true) {
+    let chunk;
+    let ok = false;
 
-      if (chunk.size === 0) {
-        if (attempt > 1) console.log(`Members fetch succeeded on attempt ${attempt}`);
-        return fetched;
-      }
-
-      fetched.push(...chunk.values());
-      after = chunk.last()?.id;
-      attempt = 0;
-      continue;
-    } catch (err) {
-      if (attempt < FETCH_RETRIES) {
-        const wait = attempt * 2000;
-        console.warn(`Members fetch attempt ${attempt} failed (${err.message}), retrying in ${wait}ms...`);
-        await sleep(wait);
-      } else {
-        console.error(`Members fetch failed after ${FETCH_RETRIES} attempts: ${err.message}`);
+    for (let retry = 1; retry <= FETCH_RETRIES; retry += 1) {
+      try {
+        chunk = await guild.members.fetch({ limit: FETCH_CHUNK_SIZE, after });
+        ok = true;
+        if (retry > 1) console.log(`Members fetch succeeded on attempt ${retry}`);
+        break;
+      } catch (err) {
+        if (retry < FETCH_RETRIES) {
+          const wait = retry * 2000;
+          console.warn(`Members fetch attempt ${retry} failed (${err.message}), retrying in ${wait}ms...`);
+          await sleep(wait);
+        } else {
+          console.error(`Members fetch failed after ${FETCH_RETRIES} attempts: ${err.message}`);
+        }
       }
     }
+
+    if (!ok || chunk.size === 0) break;
+
+    fetched.push(...chunk.values());
+    after = chunk.last()?.id;
   }
 
   return fetched;
@@ -294,7 +295,7 @@ export async function syncInviteLedger(guild) {
       if (member.user.bot) continue;
       if (trackedSet.has(member.id)) continue;
       untracked.push(member);
-      processed++;
+      processed += 1;
 
       if (processed % CHUNK_SIZE === 0) {
         await sleep(0);
@@ -333,10 +334,10 @@ export async function syncInviteLedger(guild) {
         isVanity: slot.isVanity ?? false
       });
 
-      if (fake) stats.fake++;
-      else stats.valid++;
+      if (fake) stats.fake += 1;
+      else stats.valid += 1;
 
-      slotIdx++;
+      slotIdx += 1;
     }
 
     /* ── Step 7: Batch insert ── */
@@ -415,12 +416,11 @@ export async function rebuildInviteRegistry(guild) {
 
     try {
       const invites = await guild.invites.fetch();
-      for (const invite of invites.values()) {
-        if (invite.inviter && invite.code) {
-          await registerInviteCode(guild.id, invite.code, invite.inviter.id);
-          registered++;
-        }
-      }
+      const entries = [...invites.values()].filter((inv) => inv.inviter && inv.code);
+      await Promise.all(
+        entries.map((inv) => registerInviteCode(guild.id, inv.code, inv.inviter.id))
+      );
+      registered = entries.length;
     } catch (err) {
       console.error('Failed to rebuild invite registry:', err.message);
     }

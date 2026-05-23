@@ -4,12 +4,14 @@ import { withRetry } from '../utils/retry.js';
 
 const sql = neon(config.databaseUrl);
 
+/** Parses count from a query result row. */
 function parseCount(result) {
   const row = result?.[0];
   const count = row?.count ?? 0;
   return Number.parseInt(String(count), 10) || 0;
 }
 
+/** Initializes database schema and tables, runs migrations. */
 export async function initDatabase() {
   await sql`
     CREATE TABLE IF NOT EXISTS invites (
@@ -124,6 +126,7 @@ export async function initDatabase() {
   }
 }
 
+/** Gets valid (non-fake, non-left, non-self) invitee IDs for an inviter. */
 export async function getValidInviteeIds(inviterId, guildId) {
   const rows = await sql`
     SELECT invitee_id
@@ -139,6 +142,7 @@ export async function getValidInviteeIds(inviterId, guildId) {
   return rows.map((r) => r.invitee_id);
 }
 
+/** Gets valid invite count for a user, updating cache for main guild. */
 export async function getValidInviteCount(userId, guildId) {
   const result = await sql`
     SELECT COUNT(*)::int AS count
@@ -160,6 +164,7 @@ export async function getValidInviteCount(userId, guildId) {
   return count;
 }
 
+/** Clears all invite records for a user in a guild. */
 export async function clearUserInvites(userId, guildId) {
   const result = await sql`
     DELETE FROM invites
@@ -175,9 +180,10 @@ export async function clearUserInvites(userId, guildId) {
     scheduleInviteCountRefresh();
   }
 
-  return result.length >= 0;
+  return result.length > 0;
 }
 
+/** Records a single invite, avoiding duplicates via ON CONFLICT. */
 export async function recordInvite(inviterId, inviteeId, guildId, isFake, inviteCode = null, isVanity = false) {
   if (inviterId === inviteeId) return false;
 
@@ -232,23 +238,29 @@ export async function batchRecordInvites(entries) {
   const inserted = result.length;
 
   if (inserted > 0) {
-    const codes = [...new Set(filtered.filter((e) => e.inviteCode).map((e) => e.inviteCode))];
-    for (const code of codes) {
-      const entry = filtered.find((e) => e.inviteCode === code);
-      if (entry) {
-        await sql`
-          INSERT INTO invite_registry (guild_id, code, inviter_id, updated_at)
-          VALUES (${entry.guildId}, ${code}, ${entry.inviterId}, NOW())
-          ON CONFLICT (guild_id, code)
-          DO UPDATE SET inviter_id = ${entry.inviterId}, updated_at = NOW()
-        `;
-      }
+    const codeMap = new Map();
+    for (const e of filtered) {
+      if (e.inviteCode) codeMap.set(e.inviteCode, e);
+    }
+    if (codeMap.size > 0) {
+      await sql`
+        INSERT INTO invite_registry (guild_id, code, inviter_id, updated_at)
+        SELECT * FROM UNNEST(
+          ${[...codeMap.values()].map((e) => e.guildId)}::VARCHAR[],
+          ${[...codeMap.keys()]}::VARCHAR[],
+          ${[...codeMap.values()].map((e) => e.inviterId)}::VARCHAR[],
+          ARRAY(SELECT NOW() FROM generate_series(1, ${codeMap.size}))::TIMESTAMP[]
+        )
+        ON CONFLICT (guild_id, code)
+        DO UPDATE SET inviter_id = EXCLUDED.inviter_id, updated_at = NOW()
+      `;
     }
   }
 
   return inserted;
 }
 
+/** Gets all invite history for an inviter in a guild. */
 export async function getInviteHistoryForInviter(inviterId, guildId) {
   return await sql`
     SELECT invitee_id, invite_code, is_fake, is_left, joined_at, left_at
@@ -278,6 +290,7 @@ async function purgeVanityRows(guildId) {
   return removed.length;
 }
 
+/** Checks if an invite record exists for a user in a guild. */
 export async function hasInviteRecord(userId, guildId) {
   const result = await sql`
     SELECT COUNT(*)::int AS count
@@ -298,6 +311,7 @@ export async function getTrackedInviteeIdsSet(guildId) {
   return new Set(rows.map((r) => r.invitee_id));
 }
 
+/** Gets active invitee IDs that are not marked as left. */
 export async function getActiveInviteeIds(guildId) {
   const rows = await sql`
     SELECT invitee_id
@@ -310,6 +324,7 @@ export async function getActiveInviteeIds(guildId) {
   return rows.map((r) => r.invitee_id);
 }
 
+/** Marks a user as left in the invites table. */
 export async function markUserLeftSync(userId, guildId) {
   const result = await sql`
     UPDATE invites
@@ -333,11 +348,13 @@ export async function registerInviteCode(guildId, code, inviterId, isVanity = fa
   `;
 }
 
+/** Unregisters an invite code from the registry. */
 export async function unregisterInviteCode(guildId, code) {
   if (!code) return;
   await sql`DELETE FROM invite_registry WHERE guild_id = ${guildId} AND code = ${code}`;
 }
 
+/** Gets the inviter ID for an invite code. */
 export async function getInviterForCode(guildId, code) {
   const result = await sql`
     SELECT inviter_id FROM invite_registry
@@ -348,6 +365,7 @@ export async function getInviterForCode(guildId, code) {
 
 const STALE_DAYS = 30;
 
+/** Cleans up invite registry entries older than 30 days. */
 export async function cleanupStaleRegistry() {
   const removed = await sql`
     DELETE FROM invite_registry
@@ -376,7 +394,7 @@ export async function snapshotInviteUses(guildId, invites, vanityData = null) {
 
   if (rows.length === 0) return 0;
 
-  const result = await withRetry(async () => {
+  await withRetry(async () => {
     const gids = rows.map((r) => r[0]);
     const codes = rows.map((r) => r[1]);
     const invIds = rows.map((r) => r[2]);
@@ -440,6 +458,7 @@ export async function batchMarkUsersLeft(userIds, guildId) {
   return result.length;
 }
 
+/** Gets the active (non-closed) ticket for a user in a guild. */
 export async function getActiveTicketByUser(userId, guildId) {
   const result = await sql`
     SELECT * FROM tickets
@@ -452,6 +471,7 @@ export async function getActiveTicketByUser(userId, guildId) {
   return result.length > 0 ? result[0] : null;
 }
 
+/** Gets all active (non-closed) tickets for a guild. */
 export async function getAllActiveTicketsForGuild(guildId) {
   return await sql`
     SELECT * FROM tickets
@@ -460,6 +480,7 @@ export async function getAllActiveTicketsForGuild(guildId) {
   `;
 }
 
+/** Inserts a new active ticket record, returns null on duplicate. */
 export async function insertActiveTicket(channelId, userId, guildId, inviteCount) {
   const count = Number(inviteCount) || 0;
   const status = count > 0 ? 'awaiting_proof' : 'no_invites';
@@ -477,6 +498,7 @@ export async function insertActiveTicket(channelId, userId, guildId, inviteCount
   }
 }
 
+/** Closes a ticket by its database ID, returns the channel ID. */
 export async function closeTicketById(ticketId) {
   const result = await sql`
     UPDATE tickets
@@ -488,6 +510,7 @@ export async function closeTicketById(ticketId) {
   return result.length > 0 ? result[0].channel_id : null;
 }
 
+/** Gets a guild config value by key. */
 export async function getGuildConfig(guildId, key) {
   const result = await sql`
     SELECT config_value FROM guild_config
@@ -496,6 +519,7 @@ export async function getGuildConfig(guildId, key) {
   return result.length > 0 ? result[0].config_value : null;
 }
 
+/** Sets a guild config value by key (upsert). */
 export async function setGuildConfig(guildId, key, value) {
   await sql`
     INSERT INTO guild_config (guild_id, config_key, config_value)
@@ -505,6 +529,7 @@ export async function setGuildConfig(guildId, key, value) {
   `;
 }
 
+/** Gets the active ticket record by channel ID. */
 export async function getTicketByChannel(channelId) {
   const result = await sql`
     SELECT * FROM tickets
@@ -514,6 +539,7 @@ export async function getTicketByChannel(channelId) {
   return result.length > 0 ? result[0] : null;
 }
 
+/** Updates ticket workflow status and related fields. */
 export async function updateTicketWorkflow(channelId, fields) {
   const { status, claimedCount, actualCount, verificationNote } = fields;
 
@@ -551,6 +577,7 @@ export async function updateTicketWorkflow(channelId, fields) {
   }
 }
 
+/** Updates the proof anchor message ID for a ticket. */
 export async function updateTicketProofAnchor(channelId, messageId) {
   await sql`
     UPDATE tickets
@@ -559,6 +586,7 @@ export async function updateTicketProofAnchor(channelId, messageId) {
   `;
 }
 
+/** Closes a ticket record by channel ID. */
 export async function closeTicketRecord(channelId) {
   const result = await sql`
     UPDATE tickets
@@ -569,6 +597,7 @@ export async function closeTicketRecord(channelId) {
   return result.length > 0;
 }
 
+/** Closes the database connection gracefully. */
 export async function closeDatabase() {
   try {
     if (typeof sql.end === 'function') {

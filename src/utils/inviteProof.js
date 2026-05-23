@@ -19,32 +19,33 @@ export async function getValidInviteeProfiles(mainGuild, inviterId) {
       AND is_vanity = FALSE
   `;
 
-  const profiles = [];
-
-  for (const row of rows) {
-    try {
-      const member = await mainGuild.members.fetch(row.invitee_id);
-      const u = member.user;
-      profiles.push({
-        id: row.invitee_id,
-        username: u.username,
-        globalName: u.globalName ?? u.username
-      });
-    } catch {
+  const results = await Promise.allSettled(
+    rows.map(async (row) => {
       try {
-        const user = await mainGuild.client.users.fetch(row.invitee_id);
-        profiles.push({
+        const member = await mainGuild.members.fetch(row.invitee_id);
+        const u = member.user;
+        return {
           id: row.invitee_id,
-          username: user.username,
-          globalName: user.globalName ?? user.username
-        });
+          username: u.username,
+          globalName: u.globalName ?? u.username
+        };
       } catch {
-        console.warn(`Could not resolve invitee ${row.invitee_id} for proof matching`);
+        try {
+          const user = await mainGuild.client.users.fetch(row.invitee_id);
+          return {
+            id: row.invitee_id,
+            username: user.username,
+            globalName: user.globalName ?? user.username
+          };
+        } catch {
+          console.warn(`Could not resolve invitee ${row.invitee_id} for proof matching`);
+          return null;
+        }
       }
-    }
-  }
+    })
+  );
 
-  return profiles;
+  return results.filter((r) => r.status === 'fulfilled' && r.value).map((r) => r.value);
 }
 
 /** Names to check in DM headers — covers both global name and @username. */
@@ -52,11 +53,13 @@ export function proofNames(profile) {
   return [profile.username, profile.globalName].filter(Boolean);
 }
 
+/** Normalizes a name for comparison (lowercase, strip @, trim). */
 function normalizeName(name) {
   if (!name || typeof name !== 'string') return '';
   return name.toLowerCase().replace(/^@/, '').trim();
 }
 
+/** Matches two names flexibly (exact or suffix match). */
 function matchName(req, detected) {
   const a = normalizeName(req);
   const b = normalizeName(detected);
@@ -204,8 +207,8 @@ export function validateProofAgainstInvitees(ai, expectedInvitees, inviterId, ex
   if (matched.length < expectedCount) {
     const requiredList = requiredFlat.map((u) => `@${normalizeName(u)}`).join(', ');
     const missingList = missingNames.map((u) => `@${normalizeName(u)}`).join(', ');
-    const extraNote =
-      extra.length > 0 ? ` Wrong user in proof: ${extra.map((u) => `@${u}`).join(', ')}.` : '';
+    const extraList = extra.map((u) => `@${u}`).join(', ');
+    const extraNote = extra.length > 0 ? ` Wrong user in proof: ${extraList}.` : '';
 
     return {
       approved: false,
@@ -248,7 +251,7 @@ export function validateProofAgainstInvitees(ai, expectedInvitees, inviterId, ex
 
   return {
     approved: true,
-    reason: `OK: ${matchedNames.map((u) => `@${normalizeName(u)}`).join(', ')}`,
+    reason: 'OK: ' + matchedNames.map((u) => '@' + normalizeName(u)).join(', '),
     legitimate_dm_count: matched.length,
     matched_usernames: matchedNames,
     missing_usernames: [],

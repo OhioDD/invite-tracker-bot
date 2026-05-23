@@ -1,3 +1,4 @@
+/** Normalizes text to a URL-safe slug. */
 function slugify(text, maxLen = 24) {
   return (
     String(text)
@@ -6,7 +7,7 @@ function slugify(text, maxLen = 24) {
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]/g, '-')
       .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
+      .replace(/^-/, '').replace(/-$/, '')
       .slice(0, maxLen) || 'user'
   );
 }

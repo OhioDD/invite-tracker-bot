@@ -3,6 +3,7 @@ import { removeCachedTicket } from './ticketCache.js';
 
 const deletionLocks = new Set();
 
+/** Closes a ticket channel with a deletion lock to prevent double-deletion. */
 export async function closeTicketChannel(channel, reason = 'Ticket closed') {
   if (!channel?.id) return;
   if (deletionLocks.has(channel.id)) return;

@@ -10,6 +10,7 @@ export const data = new SlashCommandBuilder()
     opt.setName('user').setDescription('User to check').setRequired(true)
   );
 
+/** Checks valid invite count for a user. */
 export async function execute(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 

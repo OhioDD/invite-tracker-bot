@@ -81,6 +81,7 @@ const PROOF_VERIFICATION_SCHEMA = {
   ]
 };
 
+/** Extracts JSON from AI model response text, trying multiple parse strategies. */
 function extractJsonFromModelText(text) {
   if (!text || typeof text !== 'string') return null;
 
@@ -92,7 +93,7 @@ function extractJsonFromModelText(text) {
     // continue
   }
 
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(trimmed);
   if (fenced?.[1]) {
     try {
       return JSON.parse(fenced[1].trim());
@@ -114,6 +115,7 @@ function extractJsonFromModelText(text) {
   return null;
 }
 
+/** Normalizes AI proof verification response into a consistent shape. */
 function normalizeAiProof(parsed) {
   const detected = parsed.detected_dm_usernames ?? parsed.detected_usernames ?? parsed.usernames ?? [];
   const list = Array.isArray(detected) ? detected : [];
@@ -155,6 +157,7 @@ function normalizeAiProof(parsed) {
 
 const OLLAMA_TIMEOUT = 30_000;
 
+/** Sends a chat request to the Ollama Cloud API with timeout handling. */
 async function ollamaChat({ messages, format, model = config.ollamaCloudModel }) {
   if (!config.ollamaApiKey) {
     throw new Error('OLLAMA_API_KEY is not set in .env');
@@ -305,6 +308,7 @@ JSON only.`;
   return validateProofAgainstInvitees(ai, expectedInvitees, inviterId, expectedCount);
 }
 
+/** Downloads an attachment and converts it to a base64 string with MIME type. */
 export async function attachmentToBase64(attachment) {
   const maxBytes = 4 * 1024 * 1024;
   if (attachment.size > maxBytes) {

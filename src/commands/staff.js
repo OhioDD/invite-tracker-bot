@@ -20,6 +20,7 @@ export const data = new SlashCommandBuilder()
   )
   .addSubcommand((sub) => sub.setName('list').setDescription('List all staff roles'));
 
+/** Handles /staff command (add, remove, list subcommands). */
 export async function execute(interaction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -39,8 +40,9 @@ export async function execute(interaction) {
       return;
     }
 
+    const roleList = ids.map((id) => `<@&${id}>`).join(', ');
     await interaction.editReply({
-      content: `Added ${role}. Staff roles (${ids.length}): ${ids.map((id) => `<@&${id}>`).join(', ')}`
+      content: `Added ${role}. Staff roles (${ids.length}): ${roleList}`
     });
     return;
   }
@@ -49,10 +51,11 @@ export async function execute(interaction) {
     const role = interaction.options.getRole('role');
     const ids = await removeStaffRole(interaction.guild.id, role.id);
 
+    const roleList2 = ids.length > 0 ? ids.map((id) => `<@&${id}>`).join(', ') : null;
     await interaction.editReply({
       content:
-        ids.length > 0
-          ? `Removed ${role}. Staff roles (${ids.length}): ${ids.map((id) => `<@&${id}>`).join(', ')}`
+        roleList2
+          ? `Removed ${role}. Staff roles (${ids.length}): ${roleList2}`
           : `Removed ${role}. No staff roles left — use \`/staff add\`.`
     });
     return;
@@ -65,8 +68,9 @@ export async function execute(interaction) {
       return;
     }
 
+    const roleList3 = ids.map((id) => `<@&${id}>`).join(', ');
     await interaction.editReply({
-      content: `Staff roles (${ids.length}): ${ids.map((id) => `<@&${id}>`).join(', ')}`
+      content: `Staff roles (${ids.length}): ${roleList3}`
     });
   }
 }

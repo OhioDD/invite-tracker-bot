@@ -5,6 +5,7 @@ import { formatCountedInvitees } from '../utils/inviteDisplay.js';
 
 export const name = 'messageCreate';
 
+/** Handles prefix commands like -invite and -i. */
 export async function execute(message) {
   if (message.author.bot) return;
   if (!message.guild) return;

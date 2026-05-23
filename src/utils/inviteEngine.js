@@ -214,12 +214,11 @@ async function fetchMembersPage(guild, after, retriesLeft) {
     console.error(`Members fetch failed after ${FETCH_RETRIES} attempts: ${err.message}`);
     throw err;
   }
-}
-
-/** Fetches all guild members in paginated chunks with retries. */
+}  /** Fetches all guild members in paginated chunks with retries. */
 async function fetchAllMembersChunked(guild) {
   const fetched = [];
 
+  /** Recursively fetches the next page using the last member ID as cursor. */
   const nextPage = async (after) => {
     let chunk;
     try {

@@ -220,7 +220,7 @@ export function validateProofAgainstInvitees(ai, expectedInvitees, inviterId, ex
 
     return {
       approved: false,
-      reason: 'Missing DM for ' + (missingList || 'unknown') + '. Need ' + requiredList + '.' + extraNote,
+      reason: `Missing DM for ${missingList || 'unknown'}. Need ${requiredList}.${extraNote}`,
       legitimate_dm_count: matched.length,
       matched_usernames: matchedNames,
       missing_usernames: missingNames,
@@ -257,9 +257,10 @@ export function validateProofAgainstInvitees(ai, expectedInvitees, inviterId, ex
     };
   }
 
+  const okNames = matchedNames.map((u) => '@' + normalizeName(u)).join(', ');
   return {
     approved: true,
-    reason: `OK: ${matchedNames.map((u) => `@${normalizeName(u)}`).join(', ')}`,
+    reason: `OK: ${okNames}`,
     legitimate_dm_count: matched.length,
     matched_usernames: matchedNames,
     missing_usernames: [],

@@ -391,17 +391,19 @@ async function checkAndCollectAbsent(guild, inviteeId) {
   }
 }
 
-async function collectAbsentIds(guild, activeIds, index = 0, absentIds = []) {
-  if (index >= activeIds.length) return absentIds;
-  const inviteeId = activeIds[index];
-  const absent = await checkAndCollectAbsent(guild, inviteeId);
-  if (absent) {
-    absentIds.push(absent);
-    if (absentIds.length % CHUNK_SIZE === 0) {
-      await sleep(API_DELAY_MS);
+async function collectAbsentIds(guild, activeIds) {
+  const absentIds = [];
+  await activeIds.reduce(async (promise, inviteeId) => {
+    await promise;
+    const absent = await checkAndCollectAbsent(guild, inviteeId);
+    if (absent) {
+      absentIds.push(absent);
+      if (absentIds.length % CHUNK_SIZE === 0) {
+        await sleep(API_DELAY_MS);
+      }
     }
-  }
-  return collectAbsentIds(guild, activeIds, index + 1, absentIds);
+  }, Promise.resolve());
+  return absentIds;
 }
 
 async function markAbsentAsLeft(guild) {

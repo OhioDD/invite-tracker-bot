@@ -257,7 +257,7 @@ export function validateProofAgainstInvitees(ai, expectedInvitees, inviterId, ex
     };
   }
 
-  const okNames = matchedNames.map((u) => '@' + normalizeName(u)).join(', ');
+  const okNames = matchedNames.map((u) => `@${normalizeName(u)}`).join(', ');
   return {
     approved: true,
     reason: `OK: ${okNames}`,

@@ -219,23 +219,22 @@ async function fetchMembersPage(guild, after, retriesLeft) {
 /** Fetches all guild members in paginated chunks with retries. */
 async function fetchAllMembersChunked(guild) {
   const fetched = [];
-  let after;
-  let shouldFetch = true;
 
-  while (shouldFetch) {
+  const nextPage = async (after) => {
     let chunk;
     try {
       chunk = await fetchMembersPage(guild, after, FETCH_RETRIES);
     } catch {
-      break;
+      return;
     }
 
-    if (chunk.size === 0) break;
+    if (chunk.size === 0) return;
 
     fetched.push(...chunk.values());
-    after = chunk.last()?.id;
-  }
+    await nextPage(chunk.last()?.id);
+  };
 
+  await nextPage();
   return fetched;
 }
 
@@ -391,6 +390,11 @@ async function checkAndCollectAbsent(guild, inviteeId) {
   }
 }
 
+/**
+ * Collect IDs of members tracked as active but no longer in the guild.
+ * Sequentially checks each active ID via the Discord API, applying a
+ * rate-limit delay every CHUNK_SIZE checks.
+ */
 async function collectAbsentIds(guild, activeIds) {
   const absentIds = [];
   await activeIds.reduce(async (promise, inviteeId) => {
@@ -406,6 +410,10 @@ async function collectAbsentIds(guild, activeIds) {
   return absentIds;
 }
 
+/**
+ * Retrieve tracked active member IDs and mark those absent from the guild as left.
+ * Uses batch update for performance.
+ */
 async function markAbsentAsLeft(guild) {
   const activeIds = await getActiveInviteeIds(guild.id);
   if (activeIds.length === 0) return 0;

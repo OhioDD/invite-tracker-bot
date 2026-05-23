@@ -34,11 +34,11 @@ async function loadCommands() {
       commandFiles.map(async (file) => {
         const filePath = join(commandsPath, file);
         const fileUrl = pathToFileURL(filePath).href;
-        return { file, module: await import(fileUrl) };
+        return { module: await import(fileUrl) };
       })
     );
 
-    for (const { file, module: command } of imported) {
+    for (const { module: command } of imported) {
       if ('data' in command && 'execute' in command) {
         client.commands.set(command.data.name, command);
         console.log(`Loaded command: ${command.data.name}`);
@@ -137,6 +137,7 @@ async function keepAlive() {
   const { waitForRecovery } = await import('./utils/guildState.js');
   await waitForRecovery();
 
+  /** Periodic keepalive tick — syncs invites, takes snapshots, cleans up stale registry entries. */
   const tick = async () => {
     try {
       if (client.isReady()) {

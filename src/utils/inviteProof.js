@@ -220,7 +220,7 @@ export function validateProofAgainstInvitees(ai, expectedInvitees, inviterId, ex
 
     return {
       approved: false,
-      reason: `Missing DM for ${missingList || 'unknown'}. Need ${requiredList}.${extraNote}`,
+      reason: 'Missing DM for ' + (missingList || 'unknown') + '. Need ' + requiredList + '.' + extraNote,
       legitimate_dm_count: matched.length,
       matched_usernames: matchedNames,
       missing_usernames: missingNames,

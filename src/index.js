@@ -163,4 +163,7 @@ async function keepAlive() {
   keepAliveTimer = setInterval(tick, 180000);
 }
 
-start().then(() => keepAlive());
+start().then(() => keepAlive()).catch((err) => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
+});

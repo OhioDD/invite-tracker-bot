@@ -244,7 +244,7 @@ export async function handleClaimModalSubmit(interaction) {
       ticket.user_id
     );
 
-    const displayName = counted ?? '@' + interaction.user.username;
+    const displayName = counted ?? `@${interaction.user.username}`;
     await interaction.channel.send({
       content: staffPing ?? null,
       embeds: [
@@ -335,10 +335,9 @@ export async function handleSubmitProofButton(interaction) {
       embeds: [compactEmbed(0xfee75c, 'Checking', requiredList)]
     });
 
-    const images = [];
-    for (const att of toScan) {
-      images.push(await attachmentToBase64(att));
-    }
+    const images = await Promise.all(
+      toScan.map((att) => attachmentToBase64(att))
+    );
 
     const result = await verifyDmProofScreenshots(
       images,

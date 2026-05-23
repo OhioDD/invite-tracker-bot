@@ -15,21 +15,18 @@ function isTransient(err) {
 }
 
 /** Retries a function with exponential backoff for transient errors. */
-export async function withRetry(fn, label = 'db op') {
-  let lastErr;
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (!isTransient(err) || attempt === MAX_ATTEMPTS) break;
-
-      const wait = Math.min(100 * 2 ** attempt, 2000);
-      console.warn(`${label} failed (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${wait}ms: ${err.message}`);
-      await new Promise((resolve) => setTimeout(resolve, wait));
+export async function withRetry(fn, label = 'db op', attempt = 1) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isTransient(err) || attempt >= MAX_ATTEMPTS) {
+      throw err;
     }
+    const wait = Math.min(100 * 2 ** attempt, 2000);
+    console.warn(`${label} failed (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${wait}ms: ${err.message}`);
+    await new Promise((resolve) => {
+      setTimeout(resolve, wait);
+    });
+    return withRetry(fn, label, attempt + 1);
   }
-
-  throw lastErr;
 }

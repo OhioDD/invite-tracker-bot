@@ -29,7 +29,9 @@ const CHUNK_SIZE = 500;
 const API_DELAY_MS = 100;
 
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function isUnknownMemberError(err) {
@@ -100,7 +102,7 @@ export async function onMemberJoin(guild, member, invite = null) {
       const tags = [];
       if (fake) tags.push('fake');
       if (isVanity) tags.push('analytics-only');
-      const tagSuffix = tags.length ? ' [' + tags.join(', ') + ']' : '';
+      const tagSuffix = tags.length ? ` [${tags.join(', ')}]` : '';
       console.log(`[live] ${member.user.tag} → ${label} (${inviteCode ?? '?'})${tagSuffix}`);
       scheduleInviteCountRefresh();
       return { ok: true, source: 'live', inviterId, fake, isVanity };
@@ -195,32 +197,40 @@ const FETCH_RETRIES = 3;
 const FETCH_CHUNK_SIZE = 5000;
 
 /** Fetches all guild members in paginated chunks with retries. */
+async function fetchMembersPage(guild, after, retriesLeft) {
+  try {
+    const chunk = await guild.members.fetch({ limit: FETCH_CHUNK_SIZE, after });
+    const attempt = FETCH_RETRIES - retriesLeft + 1;
+    if (attempt > 1) console.log(`Members fetch succeeded on attempt ${attempt}`);
+    return chunk;
+  } catch (err) {
+    if (retriesLeft > 1) {
+      const attempt = FETCH_RETRIES - retriesLeft + 1;
+      const wait = attempt * 2000;
+      console.warn(`Members fetch attempt ${attempt} failed (${err.message}), retrying in ${wait}ms...`);
+      await sleep(wait);
+      return fetchMembersPage(guild, after, retriesLeft - 1);
+    }
+    console.error(`Members fetch failed after ${FETCH_RETRIES} attempts: ${err.message}`);
+    throw err;
+  }
+}
+
+/** Fetches all guild members in paginated chunks with retries. */
 async function fetchAllMembersChunked(guild) {
   const fetched = [];
   let after;
+  let shouldFetch = true;
 
-  while (true) {
+  while (shouldFetch) {
     let chunk;
-    let ok = false;
-
-    for (let retry = 1; retry <= FETCH_RETRIES; retry += 1) {
-      try {
-        chunk = await guild.members.fetch({ limit: FETCH_CHUNK_SIZE, after });
-        ok = true;
-        if (retry > 1) console.log(`Members fetch succeeded on attempt ${retry}`);
-        break;
-      } catch (err) {
-        if (retry < FETCH_RETRIES) {
-          const wait = retry * 2000;
-          console.warn(`Members fetch attempt ${retry} failed (${err.message}), retrying in ${wait}ms...`);
-          await sleep(wait);
-        } else {
-          console.error(`Members fetch failed after ${FETCH_RETRIES} attempts: ${err.message}`);
-        }
-      }
+    try {
+      chunk = await fetchMembersPage(guild, after, FETCH_RETRIES);
+    } catch {
+      break;
     }
 
-    if (!ok || chunk.size === 0) break;
+    if (chunk.size === 0) break;
 
     fetched.push(...chunk.values());
     after = chunk.last()?.id;
@@ -296,10 +306,6 @@ export async function syncInviteLedger(guild) {
       if (trackedSet.has(member.id)) continue;
       untracked.push(member);
       processed += 1;
-
-      if (processed % CHUNK_SIZE === 0) {
-        await sleep(0);
-      }
     }
 
     untracked.sort((a, b) => a.joinedTimestamp - b.joinedTimestamp);
@@ -372,27 +378,37 @@ export async function syncInviteLedger(guild) {
  * Mark members who are in DB as active but not in guild → left.
  * Uses batch update for performance.
  */
+async function checkAndCollectAbsent(guild, inviteeId) {
+  if (guild.members.cache.has(inviteeId)) return null;
+  try {
+    await guild.members.fetch(inviteeId);
+    return null;
+  } catch (err) {
+    if (isUnknownMemberError(err)) {
+      return inviteeId;
+    }
+    return null;
+  }
+}
+
+async function collectAbsentIds(guild, activeIds, index = 0, absentIds = []) {
+  if (index >= activeIds.length) return absentIds;
+  const inviteeId = activeIds[index];
+  const absent = await checkAndCollectAbsent(guild, inviteeId);
+  if (absent) {
+    absentIds.push(absent);
+    if (absentIds.length % CHUNK_SIZE === 0) {
+      await sleep(API_DELAY_MS);
+    }
+  }
+  return collectAbsentIds(guild, activeIds, index + 1, absentIds);
+}
+
 async function markAbsentAsLeft(guild) {
   const activeIds = await getActiveInviteeIds(guild.id);
   if (activeIds.length === 0) return 0;
 
-  const absentIds = [];
-
-  for (const inviteeId of activeIds) {
-    if (guild.members.cache.has(inviteeId)) continue;
-
-    try {
-      await guild.members.fetch(inviteeId);
-    } catch (err) {
-      if (isUnknownMemberError(err)) {
-        absentIds.push(inviteeId);
-      }
-    }
-
-    if (absentIds.length % CHUNK_SIZE === 0 && absentIds.length > 0) {
-      await sleep(API_DELAY_MS);
-    }
-  }
+  const absentIds = await collectAbsentIds(guild, activeIds);
 
   if (absentIds.length === 0) return 0;
 

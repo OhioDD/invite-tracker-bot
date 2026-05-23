@@ -70,35 +70,43 @@ function matchName(req, detected) {
  * Only images uploaded AFTER the last bot rejection / proof instructions.
  * Old rejected screenshots are never scanned again.
  */
+async function fetchMessagesPage(channel, lastId, userId, seen, attachments) {
+  const fetchOptions = { limit: 100 };
+  if (lastId) fetchOptions.after = lastId;
+
+  const messages = await channel.messages.fetch(fetchOptions);
+  if (messages.size === 0) return null;
+
+  const sorted = [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  for (const message of sorted) {
+    if (message.author.id !== userId) continue;
+    for (const attachment of message.attachments.values()) {
+      if (!attachment.contentType?.startsWith('image/')) continue;
+      if (seen.has(attachment.id)) continue;
+      seen.add(attachment.id);
+      attachments.push(attachment);
+    }
+  }
+
+  return messages.last()?.id;
+}
+
+async function fetchPagesRecursively(channel, userId, seen, attachments, lastId, pagesFetched) {
+  if (pagesFetched >= 5) return;
+  const nextId = await fetchMessagesPage(channel, lastId, userId, seen, attachments);
+  if (!nextId) return;
+  return fetchPagesRecursively(channel, userId, seen, attachments, nextId, pagesFetched + 1);
+}
+
+/**
+ * Only images uploaded AFTER the last bot rejection / proof instructions.
+ * Old rejected screenshots are never scanned again.
+ */
 export async function collectProofImagesSince(channel, userId, afterMessageId) {
   const attachments = [];
   const seen = new Set();
-  let lastId = afterMessageId;
-
-  for (let page = 0; page < 5; page++) {
-    const fetchOptions = { limit: 100 };
-    if (lastId) fetchOptions.after = lastId;
-
-    const messages = await channel.messages.fetch(fetchOptions);
-    if (messages.size === 0) break;
-
-    lastId = messages.last()?.id;
-
-    const sorted = [...messages.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-
-    for (const message of sorted) {
-      if (message.author.id !== userId) continue;
-      for (const attachment of message.attachments.values()) {
-        if (!attachment.contentType?.startsWith('image/')) continue;
-        if (seen.has(attachment.id)) continue;
-        seen.add(attachment.id);
-        attachments.push(attachment);
-      }
-    }
-
-    if (messages.size < 100) break;
-  }
-
+  await fetchPagesRecursively(channel, userId, seen, attachments, afterMessageId, 0);
   return attachments;
 }
 
@@ -251,7 +259,7 @@ export function validateProofAgainstInvitees(ai, expectedInvitees, inviterId, ex
 
   return {
     approved: true,
-    reason: 'OK: ' + matchedNames.map((u) => '@' + normalizeName(u)).join(', '),
+    reason: `OK: ${matchedNames.map((u) => `@${normalizeName(u)}`).join(', ')}`,
     legitimate_dm_count: matched.length,
     matched_usernames: matchedNames,
     missing_usernames: [],
